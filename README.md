@@ -28,9 +28,13 @@ Buka `http://127.0.0.1:3000`. Pada lingkungan lokal, akun kepala sekolah pertama
 
 Di Vercel, simpan `DATABASE_URL` sebagai encrypted/sensitive environment variable untuk setiap environment yang akan dijalankan. `INITIAL_SETUP_TOKEN` hanya diperlukan pada environment production yang belum memiliki akun. Jangan set `SUPABASE_SERVICE_ROLE_KEY` atau publishable key untuk aplikasi ini; tidak digunakan. Aplikasi tidak pernah mengirim `DATABASE_URL` ke browser.
 
-## Status deployment
+## Vercel
 
-Schema Supabase untuk project di atas telah diterapkan, tetapi konektivitas dari aplikasi belum diuji karena `DATABASE_URL` belum dikonfigurasi. Express app memiliki entry point yang dapat diekspor untuk dukungan native Express Vercel, tetapi aplikasi **belum dideploy**. Deployment menunggu project/team Vercel terhubung, environment variables rahasia tersedia dengan aman, dan uji konektivitas menggunakan URI pooler berhasil. Tidak ada secret yang diminta atau ditulis ke repository pada tahap ini.
+Aplikasi memakai entry point Express `src/server.ts`, yang mengekspor app sebagai default; server lokal hanya dijalankan di luar Vercel. Vercel mendeteksi Express dari entry point ini tanpa `vercel.json`. Folder `public/` dilayani sebagai aset statis oleh Vercel; middleware `express.static()` hanya diperlukan untuk development lokal.
+
+Untuk project Vercel yang terhubung ke repository ini, gunakan Root Directory repository, Framework Preset **Express**, Install Command `npm install`, Build Command `npm run build`, dan biarkan Output Directory kosong/tidak di-override. Pilih Node.js 22.x. Build command hanya menjalankan pemeriksaan TypeScript dan menghasilkan output lokal; Vercel menjalankan `src/server.ts` sebagai Express Function.
+
+Akses team Vercel telah tersedia, tetapi aplikasi **belum dideploy**. Sebelum preview, hubungkan project Vercel ke repository dan atur `DATABASE_URL` sebagai environment variable server-side rahasia untuk Preview. `INITIAL_SETUP_TOKEN` hanya diperlukan sementara jika database belum memiliki akun kepala sekolah; hapus setelah akun dibuat. Konektivitas live belum diuji karena URI database tidak tersedia di sesi ini. Jangan masukkan secret ke repository atau browser. Tidak ada deployment yang dibuat.
 
 ## Alur kerja MVP
 
