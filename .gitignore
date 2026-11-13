@@ -1,0 +1,11 @@
+node_modules/
+dist/
+public/main.js
+public/report.js
+data/
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal

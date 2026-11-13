@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cetak rapor — Rapor Bina Ilmu</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/report.js"></script>
+  </head>
+  <body class="report-page">
+    <div class="report-toolbar">
+      <a class="button secondary" href="/">Kembali ke aplikasi</a>
+      <button class="button primary" id="print-button" type="button" disabled>Cetak / Simpan PDF</button>
+    </div>
+    <main id="report" class="report-sheet"><p class="loading">Memuat rapor…</p></main>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
