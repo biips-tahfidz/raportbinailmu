@@ -4,10 +4,10 @@ export function bindPostgresParameters(sql: string): string {
 }
 
 export function selectDatabaseConnectionString(
-  postgresUrl: string | undefined,
-  databaseUrl: string | undefined
+  databaseUrl: string | undefined,
+  postgresUrl: string | undefined
 ): string {
-  const connectionString = postgresUrl || databaseUrl;
+  const connectionString = databaseUrl || postgresUrl;
   if (!connectionString) {
     throw new Error('POSTGRES_URL atau DATABASE_URL wajib diatur untuk menghubungkan Supabase Postgres.');
   }
