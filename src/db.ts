@@ -1,13 +1,18 @@
 import 'dotenv/config';
 import { Pool, types, type PoolClient } from 'pg';
-import { bindPostgresParameters, connectionStringWithoutTlsOverrides } from './postgres.js';
+import { safeDatabaseErrorMetadata } from './error-diagnostics.js';
+import {
+  bindPostgresParameters,
+  connectionStringWithoutTlsOverrides,
+  selectDatabaseConnectionString
+} from './postgres.js';
 
 types.setTypeParser(1082, (value) => value);
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error('DATABASE_URL wajib diatur untuk menghubungkan Supabase Postgres.');
-}
+const connectionString = selectDatabaseConnectionString(
+  process.env.POSTGRES_URL,
+  process.env.DATABASE_URL
+);
 const poolMax = Number(process.env.DB_POOL_MAX ?? 3);
 if (!Number.isInteger(poolMax) || poolMax < 1 || poolMax > 10) {
   throw new Error('DB_POOL_MAX harus berupa bilangan bulat antara 1 dan 10.');
@@ -20,8 +25,11 @@ export const db = new Pool({
   connectionTimeoutMillis: 10_000,
   idleTimeoutMillis: 10_000
 });
-db.on('error', () => {
-  console.error('Koneksi Postgres idle terputus; permintaan berikutnya akan mencoba koneksi baru.');
+db.on('error', (error) => {
+  console.error(
+    'Koneksi Postgres idle terputus; permintaan berikutnya akan mencoba koneksi baru.',
+    safeDatabaseErrorMetadata(error)
+  );
 });
 
 export async function many<T = Record<string, unknown>>(
