@@ -4,6 +4,8 @@ import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
 import {
   bindPostgresParameters,
+  postgresConnectionDiagnostics,
+  postgresSslOptions,
   preparePostgresConnectionString,
   selectDatabaseConnectionString
 } from './postgres.js';
@@ -59,6 +61,45 @@ test('Vercel adds the Supabase pooler workaround exactly once and only for poole
     )
   );
   assert.equal(suffixLookalike.searchParams.has('workaround'), false);
+});
+
+test('database runtime diagnostics expose only safe Vercel and pooler booleans', () => {
+  const poolerUrl =
+    'postgresql://user:secret@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
+  const preparedUrl = preparePostgresConnectionString(poolerUrl, true);
+  const metadata = postgresConnectionDiagnostics(preparedUrl, true, false, 'POSTGRES_URL');
+
+  assert.deepEqual(metadata, {
+    vercelRuntime: true,
+    supabasePoolerHostMatched: true,
+    poolerWorkaroundPresent: true,
+    connectionUrlSource: 'POSTGRES_URL',
+    customCaConfigured: false
+  });
+  assert.equal('url' in metadata, false);
+  assert.deepEqual(
+    postgresConnectionDiagnostics(poolerUrl, false, true, 'DATABASE_URL'),
+    {
+      vercelRuntime: false,
+      supabasePoolerHostMatched: true,
+      poolerWorkaroundPresent: false,
+      connectionUrlSource: 'DATABASE_URL',
+      customCaConfigured: true
+    }
+  );
+});
+
+test('Postgres TLS uses an optional custom CA without disabling certificate validation', () => {
+  assert.deepEqual(postgresSslOptions(undefined), { rejectUnauthorized: true });
+
+  const expectedCa = '-----BEGIN CERTIFICATE-----\nZmFrZQ==\n-----END CERTIFICATE-----';
+  for (const escapedNewline of ['\\n', '\\r\\n']) {
+    const ca = `-----BEGIN CERTIFICATE-----${escapedNewline}ZmFrZQ==${escapedNewline}-----END CERTIFICATE-----`;
+    assert.deepEqual(postgresSslOptions(ca), {
+      rejectUnauthorized: true,
+      ca: expectedCa
+    });
+  }
 });
 
 test('native POSTGRES_URL takes precedence, with DATABASE_URL as fallback', () => {
