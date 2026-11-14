@@ -27,6 +27,10 @@ test('database diagnostics omit unrecognized codes and error names', () => {
 });
 
 test('database diagnostics retain mixed-case token codes but reject credential-like values', () => {
+  assert.deepEqual(safeDatabaseErrorMetadata({ code: 'SELF_SIGNED_CERT_IN_CHAIN' }), {
+    errorName: 'Error',
+    errorCode: 'SELF_SIGNED_CERT_IN_CHAIN'
+  });
   assert.deepEqual(safeDatabaseErrorMetadata({ code: 'connection-timeout' }), {
     errorName: 'Error',
     errorCode: 'connection-timeout'
