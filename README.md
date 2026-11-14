@@ -23,7 +23,7 @@ Buka `http://127.0.0.1:3000`. Pada lingkungan lokal, akun kepala sekolah pertama
 | --- | --- | --- |
 | `DATABASE_URL` | Ya, kecuali `POSTGRES_URL` tersedia | URI PostgreSQL Supabase. Diutamakan jika tersedia; gunakan transaction pooler untuk serverless. |
 | `POSTGRES_URL` | Tidak | URI PostgreSQL dari integrasi Vercel; dipakai sebagai fallback jika `DATABASE_URL` tidak tersedia. Rahasia server-side. |
-| `SUPABASE_SSL_CA` | Tidak | CA certificate PEM dari Supabase Database Settings > SSL Configuration. Simpan sebagai environment variable rahasia untuk menetapkan CA tepercaya koneksi Postgres; verifikasi sertifikat tetap diwajibkan. Mendukung newline literal maupun `\\n`/`\\r\\n` yang di-escaped. |
+| `SUPABASE_SSL_CA` | Tidak | CA certificate PEM dari Supabase Database Settings > SSL Configuration. Simpan sebagai environment variable rahasia untuk menetapkan CA tepercaya koneksi Postgres; verifikasi sertifikat tetap diwajibkan. Mendukung newline literal maupun `\n`/`\r\n` yang di-escaped. |
 | `INITIAL_SETUP_TOKEN` | Production | Token acak minimal 32 karakter; diperlukan hanya untuk membuat akun kepala sekolah pertama. Hapus dari environment setelah akun dibuat. |
 | `DB_POOL_MAX` | Tidak | Maksimal koneksi per instance, default 3, rentang 1–10. |
 | `PORT` | Tidak | Port lokal, default 3000. |
