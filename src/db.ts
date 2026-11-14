@@ -13,8 +13,8 @@ types.setTypeParser(1082, (value) => value);
 
 const postgresUrl = process.env.POSTGRES_URL;
 const databaseUrl = process.env.DATABASE_URL;
-const connectionUrlSource = postgresUrl ? 'POSTGRES_URL' : 'DATABASE_URL';
-const connectionString = selectDatabaseConnectionString(postgresUrl, databaseUrl);
+const connectionUrlSource = databaseUrl ? 'DATABASE_URL' : 'POSTGRES_URL';
+const connectionString = selectDatabaseConnectionString(databaseUrl, postgresUrl);
 const isVercel = process.env.VERCEL === '1';
 const supabaseSslCa = process.env.SUPABASE_SSL_CA;
 const preparedConnectionString = preparePostgresConnectionString(connectionString, isVercel);

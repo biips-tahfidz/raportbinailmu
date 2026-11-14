@@ -102,14 +102,17 @@ test('Postgres TLS uses an optional custom CA without disabling certificate vali
   }
 });
 
-test('native POSTGRES_URL takes precedence, with DATABASE_URL as fallback', () => {
+test('DATABASE_URL takes precedence, with native POSTGRES_URL as fallback', () => {
   assert.equal(
-    selectDatabaseConnectionString('postgresql://native.example.test/db', 'postgresql://fallback.example.test/db'),
-    'postgresql://native.example.test/db'
+    selectDatabaseConnectionString(
+      'postgresql://configured.example.test/db',
+      'postgresql://native.example.test/db'
+    ),
+    'postgresql://configured.example.test/db'
   );
   assert.equal(
-    selectDatabaseConnectionString(undefined, 'postgresql://fallback.example.test/db'),
-    'postgresql://fallback.example.test/db'
+    selectDatabaseConnectionString(undefined, 'postgresql://native.example.test/db'),
+    'postgresql://native.example.test/db'
   );
   assert.throws(() => selectDatabaseConnectionString(undefined, undefined), /POSTGRES_URL.*DATABASE_URL/);
 });
