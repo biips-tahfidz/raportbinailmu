@@ -3,7 +3,7 @@ import { Pool, types, type PoolClient } from 'pg';
 import { safeDatabaseErrorMetadata } from './error-diagnostics.js';
 import {
   bindPostgresParameters,
-  connectionStringWithoutTlsOverrides,
+  preparePostgresConnectionString,
   selectDatabaseConnectionString
 } from './postgres.js';
 
@@ -19,7 +19,10 @@ if (!Number.isInteger(poolMax) || poolMax < 1 || poolMax > 10) {
 }
 
 export const db = new Pool({
-  connectionString: connectionStringWithoutTlsOverrides(connectionString),
+  connectionString: preparePostgresConnectionString(
+    connectionString,
+    process.env.VERCEL === '1'
+  ),
   ssl: { rejectUnauthorized: true },
   max: poolMax,
   connectionTimeoutMillis: 10_000,
