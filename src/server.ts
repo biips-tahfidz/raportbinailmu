@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { db, execute, many, one, transaction } from './db.js';
+import { safeDatabaseErrorMetadata } from './error-diagnostics.js';
 import {
   calculateSubjectScore,
   formatDate,
@@ -1089,6 +1090,7 @@ app.use(
       return;
     }
     if (code) {
+      console.error('Permintaan database gagal.', safeDatabaseErrorMetadata(error));
       fail(res, 503, 'Penyimpanan tidak dapat diakses saat ini.');
       return;
     }

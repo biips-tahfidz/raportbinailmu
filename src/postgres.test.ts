@@ -4,7 +4,8 @@ import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
 import {
   bindPostgresParameters,
-  connectionStringWithoutTlsOverrides
+  connectionStringWithoutTlsOverrides,
+  selectDatabaseConnectionString
 } from './postgres.js';
 
 test('parameter binding converts positional placeholders in order', () => {
@@ -25,6 +26,18 @@ test('database URLs cannot override enforced TLS configuration', () => {
   assert.equal(result.searchParams.has('sslrootcert'), false);
   assert.equal(result.searchParams.get('application_name'), 'rapor');
   assert.throws(() => connectionStringWithoutTlsOverrides('https://db.example.test'), /DATABASE_URL/);
+});
+
+test('native POSTGRES_URL takes precedence, with DATABASE_URL as fallback', () => {
+  assert.equal(
+    selectDatabaseConnectionString('postgresql://native.example.test/db', 'postgresql://fallback.example.test/db'),
+    'postgresql://native.example.test/db'
+  );
+  assert.equal(
+    selectDatabaseConnectionString(undefined, 'postgresql://fallback.example.test/db'),
+    'postgresql://fallback.example.test/db'
+  );
+  assert.throws(() => selectDatabaseConnectionString(undefined, undefined), /POSTGRES_URL.*DATABASE_URL/);
 });
 
 test('Supabase schema migration is repeatable, private from API roles, and has no student seed data', async () => {

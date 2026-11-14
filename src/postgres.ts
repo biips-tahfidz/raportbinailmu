@@ -3,10 +3,21 @@ export function bindPostgresParameters(sql: string): string {
   return sql.replace(/\?/g, () => `$${++parameterIndex}`);
 }
 
+export function selectDatabaseConnectionString(
+  postgresUrl: string | undefined,
+  databaseUrl: string | undefined
+): string {
+  const connectionString = postgresUrl || databaseUrl;
+  if (!connectionString) {
+    throw new Error('POSTGRES_URL atau DATABASE_URL wajib diatur untuk menghubungkan Supabase Postgres.');
+  }
+  return connectionString;
+}
+
 export function connectionStringWithoutTlsOverrides(value: string): string {
   const url = new URL(value);
   if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
-    throw new Error('DATABASE_URL debe ser una URL PostgreSQL válida.');
+    throw new Error('POSTGRES_URL atau DATABASE_URL harus berupa URL PostgreSQL yang valid.');
   }
   url.searchParams.delete('ssl');
   url.searchParams.delete('sslmode');
