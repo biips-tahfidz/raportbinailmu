@@ -4,7 +4,7 @@ import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
 import {
   bindPostgresParameters,
-  connectionStringWithoutTlsOverrides,
+  preparePostgresConnectionString,
   selectDatabaseConnectionString
 } from './postgres.js';
 
@@ -18,14 +18,47 @@ test('parameter binding converts positional placeholders in order', () => {
 
 test('database URLs cannot override enforced TLS configuration', () => {
   const result = new URL(
-    connectionStringWithoutTlsOverrides(
-      'postgresql://user:secret@db.example.test/postgres?sslmode=disable&sslrootcert=unsafe.crt&application_name=rapor'
+    preparePostgresConnectionString(
+      'postgresql://user:secret@db.example.test/postgres?sslmode=disable&sslrootcert=unsafe.crt&application_name=rapor',
+      false
     )
   );
   assert.equal(result.searchParams.has('sslmode'), false);
   assert.equal(result.searchParams.has('sslrootcert'), false);
   assert.equal(result.searchParams.get('application_name'), 'rapor');
-  assert.throws(() => connectionStringWithoutTlsOverrides('https://db.example.test'), /DATABASE_URL/);
+  assert.throws(
+    () => preparePostgresConnectionString('https://db.example.test', true),
+    /DATABASE_URL/
+  );
+});
+
+test('Vercel adds the Supabase pooler workaround exactly once and only for pooler hosts', () => {
+  const poolerUrl =
+    'postgresql://user:secret@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
+  const configured = new URL(
+    preparePostgresConnectionString(`${poolerUrl}?workaround=old&workaround=duplicate`, true)
+  );
+  assert.deepEqual(configured.searchParams.getAll('workaround'), ['supabase-pooler.vercel']);
+  assert.equal(
+    preparePostgresConnectionString(configured.toString(), true),
+    configured.toString()
+  );
+
+  const local = new URL(preparePostgresConnectionString(poolerUrl, false));
+  assert.equal(local.searchParams.has('workaround'), false);
+
+  const nonPooler = new URL(
+    preparePostgresConnectionString('postgresql://user:secret@db.example.supabase.co/postgres', true)
+  );
+  assert.equal(nonPooler.searchParams.has('workaround'), false);
+
+  const suffixLookalike = new URL(
+    preparePostgresConnectionString(
+      'postgresql://user:secret@aws-0.pooler.supabase.com.example.test/postgres',
+      true
+    )
+  );
+  assert.equal(suffixLookalike.searchParams.has('workaround'), false);
 });
 
 test('native POSTGRES_URL takes precedence, with DATABASE_URL as fallback', () => {

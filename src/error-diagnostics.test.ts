@@ -26,6 +26,23 @@ test('database diagnostics omit unrecognized codes and error names', () => {
   assert.deepEqual(safeDatabaseErrorMetadata(error), { errorName: 'Error' });
 });
 
+test('database diagnostics retain mixed-case token codes but reject credential-like values', () => {
+  assert.deepEqual(safeDatabaseErrorMetadata({ code: 'SELF_SIGNED_CERT_IN_CHAIN' }), {
+    errorName: 'Error',
+    errorCode: 'SELF_SIGNED_CERT_IN_CHAIN'
+  });
+  assert.deepEqual(safeDatabaseErrorMetadata({ code: 'connection-timeout' }), {
+    errorName: 'Error',
+    errorCode: 'connection-timeout'
+  });
+  assert.deepEqual(safeDatabaseErrorMetadata({ code: 'DATABASE_URL' }), {
+    errorName: 'Error'
+  });
+  assert.deepEqual(safeDatabaseErrorMetadata({ code: 'secret-value' }), {
+    errorName: 'Error'
+  });
+});
+
 test('database diagnostics retain PostgreSQL SQLSTATE values', () => {
   assert.deepEqual(safeDatabaseErrorMetadata({ code: '28P01' }), {
     errorName: 'Error',

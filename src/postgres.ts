@@ -14,7 +14,7 @@ export function selectDatabaseConnectionString(
   return connectionString;
 }
 
-export function connectionStringWithoutTlsOverrides(value: string): string {
+export function preparePostgresConnectionString(value: string, isVercel: boolean): string {
   const url = new URL(value);
   if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
     throw new Error('POSTGRES_URL atau DATABASE_URL harus berupa URL PostgreSQL yang valid.');
@@ -22,5 +22,8 @@ export function connectionStringWithoutTlsOverrides(value: string): string {
   url.searchParams.delete('ssl');
   url.searchParams.delete('sslmode');
   url.searchParams.delete('sslrootcert');
+  if (isVercel && url.hostname.endsWith('.pooler.supabase.com')) {
+    url.searchParams.set('workaround', 'supabase-pooler.vercel');
+  }
   return url.toString();
 }
