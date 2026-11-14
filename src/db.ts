@@ -3,15 +3,26 @@ import { Pool, types, type PoolClient } from 'pg';
 import { safeDatabaseErrorMetadata } from './error-diagnostics.js';
 import {
   bindPostgresParameters,
+  postgresConnectionDiagnostics,
+  postgresSslOptions,
   preparePostgresConnectionString,
   selectDatabaseConnectionString
 } from './postgres.js';
 
 types.setTypeParser(1082, (value) => value);
 
-const connectionString = selectDatabaseConnectionString(
-  process.env.POSTGRES_URL,
-  process.env.DATABASE_URL
+const postgresUrl = process.env.POSTGRES_URL;
+const databaseUrl = process.env.DATABASE_URL;
+const connectionUrlSource = postgresUrl ? 'POSTGRES_URL' : 'DATABASE_URL';
+const connectionString = selectDatabaseConnectionString(postgresUrl, databaseUrl);
+const isVercel = process.env.VERCEL === '1';
+const supabaseSslCa = process.env.SUPABASE_SSL_CA;
+const preparedConnectionString = preparePostgresConnectionString(connectionString, isVercel);
+export const databaseConnectionMetadata = postgresConnectionDiagnostics(
+  preparedConnectionString,
+  isVercel,
+  Boolean(supabaseSslCa?.trim()),
+  connectionUrlSource
 );
 const poolMax = Number(process.env.DB_POOL_MAX ?? 3);
 if (!Number.isInteger(poolMax) || poolMax < 1 || poolMax > 10) {
@@ -19,11 +30,8 @@ if (!Number.isInteger(poolMax) || poolMax < 1 || poolMax > 10) {
 }
 
 export const db = new Pool({
-  connectionString: preparePostgresConnectionString(
-    connectionString,
-    process.env.VERCEL === '1'
-  ),
-  ssl: { rejectUnauthorized: true },
+  connectionString: preparedConnectionString,
+  ssl: postgresSslOptions(supabaseSslCa),
   max: poolMax,
   connectionTimeoutMillis: 10_000,
   idleTimeoutMillis: 10_000
@@ -31,7 +39,7 @@ export const db = new Pool({
 db.on('error', (error) => {
   console.error(
     'Koneksi Postgres idle terputus; permintaan berikutnya akan mencoba koneksi baru.',
-    safeDatabaseErrorMetadata(error)
+    { ...databaseConnectionMetadata, ...safeDatabaseErrorMetadata(error) }
   );
 });
 

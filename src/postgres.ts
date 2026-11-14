@@ -22,8 +22,49 @@ export function preparePostgresConnectionString(value: string, isVercel: boolean
   url.searchParams.delete('ssl');
   url.searchParams.delete('sslmode');
   url.searchParams.delete('sslrootcert');
-  if (isVercel && url.hostname.endsWith('.pooler.supabase.com')) {
+  if (isVercel && isSupabasePoolerHostname(url.hostname)) {
     url.searchParams.set('workaround', 'supabase-pooler.vercel');
   }
   return url.toString();
+}
+
+export function postgresConnectionDiagnostics(
+  value: string,
+  isVercel: boolean,
+  caConfigured: boolean,
+  connectionUrlSource: 'POSTGRES_URL' | 'DATABASE_URL'
+): {
+  vercelRuntime: boolean;
+  supabasePoolerHostMatched: boolean;
+  poolerWorkaroundPresent: boolean;
+  connectionUrlSource: 'POSTGRES_URL' | 'DATABASE_URL';
+  customCaConfigured: boolean;
+} {
+  const url = new URL(value);
+  const { hostname } = url;
+  const supabasePoolerHostMatched = isSupabasePoolerHostname(hostname);
+  return {
+    vercelRuntime: isVercel,
+    supabasePoolerHostMatched,
+    poolerWorkaroundPresent: url.searchParams
+      .getAll('workaround')
+      .includes('supabase-pooler.vercel'),
+    connectionUrlSource,
+    customCaConfigured: caConfigured
+  };
+}
+
+export function postgresSslOptions(caCertificate: string | undefined): {
+  rejectUnauthorized: true;
+  ca?: string;
+} {
+  const ca = caCertificate?.replace(/\\r?\\n/g, '\n').trim();
+  return {
+    rejectUnauthorized: true,
+    ...(ca ? { ca } : {})
+  };
+}
+
+function isSupabasePoolerHostname(hostname: string): boolean {
+  return hostname.endsWith('.pooler.supabase.com');
 }
