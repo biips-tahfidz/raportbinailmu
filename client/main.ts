@@ -554,7 +554,7 @@ async function handleDelete(button: HTMLButtonElement): Promise<void> {
   await request(`${endpoint}/${resourcePath}`, {
     method: 'DELETE'
   });
-  if (editing?.type === entity && editing.id === Number(id)) editing = null;
+  if (editing && editing.type === entity && editing.id === Number(id)) editing = null;
   await refresh();
   showToast('Data berhasil dihapus.');
 }
