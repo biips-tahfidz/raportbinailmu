@@ -83,6 +83,8 @@ button { cursor: pointer; }
 .button.primary:hover { background: #255645; }
 .button.secondary { color: var(--green); border-color: #d6e0d7; background: #fff; }
 .button.secondary:hover { background: #f3f7f3; }
+.button.danger { color: #a13e37; border-color: #efcfcb; background: #fff; }
+.button.danger:hover { background: #fff0ef; }
 .button.small { padding: 7px 10px; font-size: 11px; }
 .button:disabled { opacity: .48; cursor: not-allowed; }
 .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
