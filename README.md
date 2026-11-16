@@ -40,7 +40,7 @@ Untuk deployment, gunakan `DATABASE_URL` yang eksplisit (atau `POSTGRES_URL` dar
 
 ## Alur kerja MVP
 
-- Kepala sekolah menyiapkan rombel, siswa, mata pelajaran per kelas/fase, TP, periode akademik, pengguna, identitas sekolah opsional, serta bobot formatif/sumatif tiap mapel dan periode.
+- Kepala sekolah menyiapkan dan dapat mengedit rombel, siswa, mata pelajaran per kelas/fase, TP, periode akademik, pengguna, identitas sekolah opsional, serta bobot formatif/sumatif tiap mapel dan periode. Wali kelas tetap dapat menambahkan rombel/siswa dan guru mata pelajaran dapat menambahkan TP sesuai perannya.
 - Guru mata pelajaran memasukkan nilai per siswa dan TP, menulis narasi, lalu menandai narasi telah ditinjau.
 - Wali kelas mengimpor ekspor kehadiran, mengisi bagian rapor kokurikuler/profil/ekstrakurikuler bila diperlukan, dan meninjau kelengkapan rapor.
 - Kepala sekolah menyetujui dan memfinalkan rapor. Hanya rapor final yang dapat dibuka untuk dicetak atau disimpan ke PDF.
@@ -48,6 +48,8 @@ Untuk deployment, gunakan `DATABASE_URL` yang eksplisit (atau `POSTGRES_URL` dar
 Perhitungan nilai menormalkan setiap nilai asesmen ke skala 0–100, merata-ratakan nilai formatif dan sumatif secara terpisah, lalu menerapkan bobot yang tersimpan untuk mapel/periode tersebut. Jumlah bobot wajib 100%. Tidak ada bobot default; kategori dengan bobot positif harus memiliki nilai sebelum rapor siap. Nilai dan narasi yang belum lengkap tidak dapat difinalkan. Setelah wali kelas mulai meninjau, data rapor dan bobot dikunci agar hasil final tidak berubah di belakang; buat periode baru bila ada koreksi yang memerlukan alur persetujuan ulang.
 
 Kehadiran dihitung dari tanggal yang masuk dalam rentang periode. Impor membutuhkan kolom `Tanggal`, `ID_Siswa`, `Nama`, `Kelas`, dan `Status`; status yang didukung adalah A (alfa), H (hadir), I (izin), S (sakit). Pencocokan siswa memakai `ID_Siswa`; nama/kelas hanya pemeriksaan sekunder. Status lama L/M tidak diterjemahkan. Baris bermasalah atau konflik membatalkan seluruh impor; impor ulang status identik tidak menggandakan presensi. API adapter dapat menggantikan sumber spreadsheet nanti tanpa mengubah batas domain kehadiran.
+
+Kepala sekolah dapat memilih **Edit** di daftar kelas/siswa, mata pelajaran/TP, periode, dan akun pada layar masing-masing. Kata sandi pengguna hanya diganti bila kata sandi baru diisi; penggantian mencabut sesi lain milik akun tersebut. Tidak tersedia penghapusan data master. Perubahan tingkat kelas, pemindahan siswa/TP, atau perubahan periode/tingkat mapel ditolak bila catatan terkait sudah digunakan, agar riwayat rapor dan kehadiran tidak berubah diam-diam.
 
 ## Pengembangan dan pengujian
 

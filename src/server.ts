@@ -10,6 +10,7 @@ import {
   transaction
 } from './db.js';
 import { safeDatabaseErrorMetadata } from './error-diagnostics.js';
+import { assertProtectedEditAllowed } from './admin-edit-policy.js';
 import {
   calculateSubjectScore,
   formatDate,
@@ -111,6 +112,12 @@ function requireText(value: unknown, label: string, maxLength = 200): string {
     throw new Error(`${label} wajib diisi (maksimal ${maxLength} karakter).`);
   }
   return value.trim();
+}
+
+function requireId(value: unknown, label: string): number {
+  const id = Number(value);
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error(`${label} tidak valid.`);
+  return id;
 }
 
 function safeDate(value: unknown, label: string): string {
@@ -502,6 +509,72 @@ app.post(
   })
 );
 
+app.put(
+  '/api/users/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const userId = requireId(req.params.id, 'Pengguna');
+    const name = requireText(req.body.name, 'Nama lengkap');
+    const username = requireText(req.body.username, 'Nama pengguna', 50).toLocaleLowerCase('id-ID');
+    const role = req.body.role as Role;
+    if (!['subject_teacher', 'homeroom_teacher', 'principal'].includes(role)) {
+      throw new Error('Peran pengguna tidak valid.');
+    }
+    const password =
+      typeof req.body.password === 'string' && req.body.password.length > 0
+        ? requireText(req.body.password, 'Kata sandi', 200)
+        : undefined;
+    if (password && password.length < 12) throw new Error('Kata sandi harus memiliki minimal 12 karakter.');
+
+    await transaction(async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock($1)', [781246904]);
+      const current = await client.query<{ role: Role }>(
+        'SELECT role FROM users WHERE id = $1 FOR UPDATE',
+        [userId]
+      );
+      if (!current.rows[0]) throw new Error('Pengguna tidak ditemukan.');
+      if (current.rows[0].role === 'principal' && role !== 'principal') {
+        const principals = await client.query<{ count: string }>(
+          "SELECT COUNT(*) AS count FROM users WHERE role = 'principal'"
+        );
+        if (Number(principals.rows[0]?.count ?? 0) <= 1) {
+          throw new Error('Tidak dapat mengubah peran kepala sekolah terakhir.');
+        }
+      }
+      await client.query(
+        `UPDATE users SET name = $1, username = $2, role = $3
+         ${password ? ', password_hash = $4' : ''}
+         WHERE id = $${password ? 5 : 4}`,
+        password
+          ? [name, username, role, hashPassword(password), userId]
+          : [name, username, role, userId]
+      );
+      if (password) {
+        const cookieToken = req.headers.cookie
+          ?.split(';')
+          .map((part) => part.trim())
+          .find((part) => part.startsWith('raport_session='))
+          ?.slice('raport_session='.length);
+        const currentTokenHash =
+          req.user!.id === userId && cookieToken
+            ? createHash('sha256').update(cookieToken).digest('hex')
+            : null;
+        if (currentTokenHash) {
+          await client.query(
+            'DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2',
+            [userId, currentTokenHash]
+          );
+        } else {
+          await client.query('DELETE FROM sessions WHERE user_id = $1', [userId]);
+        }
+      }
+    });
+    await audit(req.user!.id, 'update_user', 'user', userId);
+    res.json({ ok: true });
+  })
+);
+
 app.post(
   '/api/settings',
   requireAuth,
@@ -548,6 +621,52 @@ app.post(
   })
 );
 
+app.put(
+  '/api/classes/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const classId = requireId(req.params.id, 'Rombel');
+    const name = requireText(req.body.name, 'Nama rombel');
+    const grade = Number(req.body.grade);
+    const phase = phaseForGrade(grade);
+    const teacher = req.body.homeroomTeacher
+      ? requireText(req.body.homeroomTeacher, 'Nama wali kelas')
+      : null;
+    const current = await one<{ name: string; grade: number }>(
+      'SELECT name, grade FROM classes WHERE id = ?',
+      classId
+    );
+    if (!current) throw new Error('Rombel tidak ditemukan.');
+    if (
+      (await one(
+        `SELECT 1 FROM students JOIN report_states ON report_states.student_id = students.id
+         WHERE students.class_id = ? AND report_states.status <> 'draft' LIMIT 1`,
+        classId
+      )) &&
+      name !== current.name
+    ) {
+      assertProtectedEditAllowed('class-name', true);
+    }
+    if (current.grade !== grade) {
+      assertProtectedEditAllowed(
+        'class-grade',
+        Boolean(await one('SELECT 1 FROM students WHERE class_id = ? LIMIT 1', classId))
+      );
+    }
+    await execute(
+      'UPDATE classes SET name = ?, grade = ?, phase = ?, homeroom_teacher = ? WHERE id = ?',
+      name,
+      grade,
+      phase,
+      teacher,
+      classId
+    );
+    await audit(req.user!.id, 'update_class', 'class', classId);
+    res.json({ ok: true });
+  })
+);
+
 app.post(
   '/api/students',
   requireAuth,
@@ -567,6 +686,62 @@ app.post(
     );
     await audit(req.user!.id, 'create_student', 'student', result!.id);
     res.status(201).json({ ok: true });
+  })
+);
+
+app.put(
+  '/api/students/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const studentId = requireId(req.params.id, 'Siswa');
+    const studentCode = requireText(req.body.studentCode, 'ID siswa', 50);
+    const name = requireText(req.body.name, 'Nama siswa');
+    const classId = requireId(req.body.classId, 'Rombel');
+    const current = await one<{ class_id: number; student_code: string; name: string }>(
+      'SELECT class_id, student_code, name FROM students WHERE id = ?',
+      studentId
+    );
+    if (!current) throw new Error('Siswa tidak ditemukan.');
+    if (!(await one('SELECT id FROM classes WHERE id = ?', classId))) {
+      throw new Error('Rombel tidak ditemukan.');
+    }
+    if (current.class_id !== classId || current.student_code !== studentCode) {
+      const hasHistory = Boolean(await one(
+        `SELECT 1 FROM attendance WHERE student_id = ?
+         UNION ALL SELECT 1 FROM assessments WHERE student_id = ?
+         UNION ALL SELECT 1 FROM narratives WHERE student_id = ?
+         UNION ALL SELECT 1 FROM report_states WHERE student_id = ? LIMIT 1`,
+        studentId,
+        studentId,
+        studentId,
+        studentId
+      ));
+      if (current.class_id !== classId) {
+        assertProtectedEditAllowed('student-class', hasHistory);
+      }
+      if (current.student_code !== studentCode) {
+        assertProtectedEditAllowed('student-code', hasHistory);
+      }
+    }
+    if (
+      current.name !== name &&
+      (await one(
+        "SELECT 1 FROM report_states WHERE student_id = ? AND status <> 'draft' LIMIT 1",
+        studentId
+      ))
+    ) {
+      assertProtectedEditAllowed('student-name', true);
+    }
+    await execute(
+      'UPDATE students SET student_code = ?, name = ?, class_id = ? WHERE id = ?',
+      studentCode,
+      name,
+      classId,
+      studentId
+    );
+    await audit(req.user!.id, 'update_student', 'student', studentId);
+    res.json({ ok: true });
   })
 );
 
@@ -590,6 +765,56 @@ app.post(
     );
     await audit(req.user!.id, 'create_term', 'term', result!.id);
     res.status(201).json({ ok: true });
+  })
+);
+
+app.put(
+  '/api/terms/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const termId = requireId(req.params.id, 'Periode');
+    const academicYear = requireText(req.body.academicYear, 'Tahun ajaran', 20);
+    const semester = Number(req.body.semester);
+    if (![1, 2].includes(semester)) throw new Error('Semester harus 1 atau 2.');
+    const startsOn = safeDate(req.body.startsOn, 'Tanggal mulai');
+    const endsOn = safeDate(req.body.endsOn, 'Tanggal akhir');
+    if (startsOn > endsOn) throw new Error('Tanggal mulai harus sebelum tanggal akhir.');
+    const current = await one<{ starts_on: string; ends_on: string }>(
+      'SELECT starts_on, ends_on FROM academic_terms WHERE id = ?',
+      termId
+    );
+    if (!current) throw new Error('Periode tidak ditemukan.');
+    const hasReferences = await one(
+        `SELECT 1 FROM score_rules WHERE term_id = ?
+         UNION ALL SELECT 1 FROM assessments WHERE term_id = ?
+         UNION ALL SELECT 1 FROM narratives WHERE term_id = ?
+         UNION ALL SELECT 1 FROM report_sections WHERE term_id = ?
+         UNION ALL SELECT 1 FROM report_states WHERE term_id = ?
+         UNION ALL SELECT 1 FROM attendance
+           WHERE attendance_date BETWEEN ? AND ? OR attendance_date BETWEEN ? AND ?
+         LIMIT 1`,
+        termId,
+        termId,
+        termId,
+        termId,
+        termId,
+        current.starts_on,
+        current.ends_on,
+        startsOn,
+        endsOn
+      );
+    assertProtectedEditAllowed('term', Boolean(hasReferences));
+    await execute(
+      'UPDATE academic_terms SET academic_year = ?, semester = ?, starts_on = ?, ends_on = ? WHERE id = ?',
+      academicYear,
+      semester,
+      startsOn,
+      endsOn,
+      termId
+    );
+    await audit(req.user!.id, 'update_term', 'term', termId);
+    res.json({ ok: true });
   })
 );
 
@@ -623,6 +848,55 @@ app.post(
   })
 );
 
+app.put(
+  '/api/subjects/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const subjectId = requireId(req.params.id, 'Mata pelajaran');
+    const name = requireText(req.body.name, 'Nama mata pelajaran');
+    const grade = Number(req.body.grade);
+    const phase = phaseForGrade(grade);
+    const current = await one<{ grade: number; phase: string; name: string }>(
+      'SELECT grade, phase, name FROM subjects WHERE id = ?',
+      subjectId
+    );
+    if (!current) throw new Error('Mata pelajaran tidak ditemukan.');
+    if (
+      current.name !== name &&
+      (await one(
+        `SELECT 1 FROM students JOIN classes ON classes.id = students.class_id
+         JOIN report_states ON report_states.student_id = students.id
+         WHERE classes.grade = ? AND classes.phase = ? AND report_states.status <> 'draft' LIMIT 1`,
+        current.grade,
+        current.phase
+      ))
+    ) {
+      assertProtectedEditAllowed('subject-name', true);
+    }
+    if (current.grade !== grade) {
+      const hasReferences = await one(
+        `SELECT 1 FROM learning_objectives WHERE subject_id = ?
+         UNION ALL SELECT 1 FROM score_rules WHERE subject_id = ?
+         UNION ALL SELECT 1 FROM narratives WHERE subject_id = ? LIMIT 1`,
+        subjectId,
+        subjectId,
+        subjectId
+      );
+      assertProtectedEditAllowed('subject-grade', Boolean(hasReferences));
+    }
+    await execute(
+      'UPDATE subjects SET name = ?, grade = ?, phase = ? WHERE id = ?',
+      name,
+      grade,
+      phase,
+      subjectId
+    );
+    await audit(req.user!.id, 'update_subject', 'subject', subjectId);
+    res.json({ ok: true });
+  })
+);
+
 app.post(
   '/api/objectives',
   requireAuth,
@@ -642,6 +916,45 @@ app.post(
     );
     await audit(req.user!.id, 'create_objective', 'objective', result!.id);
     res.status(201).json({ ok: true });
+  })
+);
+
+app.put(
+  '/api/objectives/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const objectiveId = requireId(req.params.id, 'Tujuan pembelajaran');
+    const subjectId = requireId(req.body.subjectId, 'Mata pelajaran');
+    const code = req.body.code ? requireText(req.body.code, 'Kode TP', 40) : null;
+    const description = requireText(req.body.description, 'Deskripsi TP', 1000);
+    const current = await one<{ subject_id: number; code: string | null; description: string }>(
+      'SELECT subject_id, code, description FROM learning_objectives WHERE id = ?',
+      objectiveId
+    );
+    if (!current) throw new Error('Tujuan pembelajaran tidak ditemukan.');
+    if (!(await one('SELECT id FROM subjects WHERE id = ?', subjectId))) {
+      throw new Error('Mata pelajaran tidak ditemukan.');
+    }
+    if (
+      current.subject_id !== subjectId ||
+      current.code !== code ||
+      current.description !== description
+    ) {
+      assertProtectedEditAllowed(
+        'objective',
+        Boolean(await one('SELECT 1 FROM assessments WHERE objective_id = ? LIMIT 1', objectiveId))
+      );
+    }
+    await execute(
+      'UPDATE learning_objectives SET subject_id = ?, code = ?, description = ? WHERE id = ?',
+      subjectId,
+      code,
+      description,
+      objectiveId
+    );
+    await audit(req.user!.id, 'update_objective', 'objective', objectiveId);
+    res.json({ ok: true });
   })
 );
 

@@ -53,6 +53,7 @@ let screen = 'dashboard';
 let activeTermId = '';
 let reportRows: ReportRow[] = [];
 let toastTimer = 0;
+let editing: { type: string; id: number } | null = null;
 
 class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -260,17 +261,22 @@ function renderDashboard(): string {
 function renderStudents(): string {
   if (!data) return '';
   const canEdit = ['principal', 'homeroom_teacher'].includes(data.user.role);
+  const canManage = data.user.role === 'principal';
+  const editingClass = editing?.type === 'class' ? data.classes.find((room) => Number(room.id) === editing!.id) : undefined;
+  const editingStudent = editing?.type === 'student' ? data.students.find((student) => Number(student.id) === editing!.id) : undefined;
   return `
     ${pageHead('Data kelas', 'Kelas dan siswa', 'Rombel mengacu pada fase SD: kelas 1–2 fase A, 3–4 fase B, dan 5–6 fase C.')}
     <div class="grid two">
       <article class="card">
         <h3 class="section-title">Daftar rombel</h3>
-        ${data.classes.length ? `<div class="table-wrap"><table><thead><tr><th>Rombel</th><th>Kelas / fase</th><th>Wali kelas</th><th>Siswa</th></tr></thead><tbody>${data.classes.map((room) => `<tr><td><strong>${esc(room.name)}</strong></td><td>${esc(room.grade)} · Fase ${esc(room.phase)}</td><td>${esc(room.homeroom_teacher || '—')}</td><td>${esc(room.student_count)}</td></tr>`).join('')}</tbody></table></div>` : empty('Belum ada rombel.')}
+        ${data.classes.length ? `<div class="table-wrap"><table><thead><tr><th>Rombel</th><th>Kelas / fase</th><th>Wali kelas</th><th>Siswa</th>${canManage ? '<th>Aksi</th>' : ''}</tr></thead><tbody>${data.classes.map((room) => `<tr><td><strong>${esc(room.name)}</strong></td><td>${esc(room.grade)} · Fase ${esc(room.phase)}</td><td>${esc(room.homeroom_teacher || '—')}</td><td>${esc(room.student_count)}</td>${canManage ? `<td><button class="button secondary small" data-edit="class" data-id="${esc(room.id)}">Edit</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : empty('Belum ada rombel.')}
+        ${editingClass ? `<hr class="divider" /><h3 class="section-title">Edit rombel</h3><form class="stack" data-action="editClass"><input type="hidden" name="id" value="${esc(editingClass.id)}" /><div class="form-grid"><div class="field"><label>Nama rombel</label><input name="name" value="${esc(editingClass.name)}" required /></div><div class="field"><label>Kelas</label><select name="grade" required>${[1, 2, 3, 4, 5, 6].map((grade) => `<option value="${grade}" ${Number(editingClass.grade) === grade ? 'selected' : ''}>Kelas ${grade} · Fase ${grade < 3 ? 'A' : grade < 5 ? 'B' : 'C'}</option>`).join('')}</select></div><div class="field full"><label>Nama wali kelas</label><input name="homeroomTeacher" value="${esc(editingClass.homeroom_teacher)}" /></div></div><p class="hint">Tingkat rombel hanya dapat diubah sebelum ada siswa; nama yang sudah tampil pada rapor yang ditinjau dikunci.</p><div class="actions"><button class="button primary" type="submit">Simpan perubahan</button><button class="button secondary" type="button" data-edit-cancel>Batal</button></div></form>` : ''}
         ${canEdit ? `<hr class="divider" /><h3 class="section-title">Tambah rombel</h3><form class="stack" data-action="class"><div class="form-grid"><div class="field"><label>Nama rombel</label><input name="name" placeholder="Contoh: 4A" required /></div><div class="field"><label>Kelas</label><select name="grade" required>${[1, 2, 3, 4, 5, 6].map((grade) => `<option value="${grade}">Kelas ${grade} · Fase ${grade < 3 ? 'A' : grade < 5 ? 'B' : 'C'}</option>`).join('')}</select></div><div class="field full"><label>Nama wali kelas</label><input name="homeroomTeacher" /></div></div><button class="button primary" type="submit">Simpan rombel</button></form>` : ''}
       </article>
       <article class="card">
         <h3 class="section-title">Daftar siswa</h3>
-        ${data.students.length ? `<div class="table-wrap"><table><thead><tr><th>ID siswa</th><th>Nama</th><th>Rombel</th></tr></thead><tbody>${data.students.map((student) => `<tr><td>${esc(student.student_code)}</td><td><strong>${esc(student.name)}</strong></td><td>${esc(student.class_name)}</td></tr>`).join('')}</tbody></table></div>` : empty('Belum ada siswa.')}
+        ${data.students.length ? `<div class="table-wrap"><table><thead><tr><th>ID siswa</th><th>Nama</th><th>Rombel</th>${canManage ? '<th>Aksi</th>' : ''}</tr></thead><tbody>${data.students.map((student) => `<tr><td>${esc(student.student_code)}</td><td><strong>${esc(student.name)}</strong></td><td>${esc(student.class_name)}</td>${canManage ? `<td><button class="button secondary small" data-edit="student" data-id="${esc(student.id)}">Edit</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : empty('Belum ada siswa.')}
+        ${editingStudent ? `<hr class="divider" /><h3 class="section-title">Edit siswa</h3><form class="stack" data-action="editStudent"><input type="hidden" name="id" value="${esc(editingStudent.id)}" /><div class="form-grid"><div class="field"><label>ID siswa</label><input name="studentCode" value="${esc(editingStudent.student_code)}" required /></div><div class="field"><label>Nama siswa</label><input name="name" value="${esc(editingStudent.name)}" required /></div><div class="field full"><label>Rombel</label><select name="classId" required>${data.classes.map((room) => `<option value="${esc(room.id)}" ${Number(editingStudent.class_id) === Number(room.id) ? 'selected' : ''}>${esc(room.name)} · Kelas ${esc(room.grade)}</option>`).join('')}</select></div></div><p class="hint">ID/rombel tidak dapat diubah setelah data digunakan; nama dikunci setelah rapor mulai ditinjau.</p><div class="actions"><button class="button primary" type="submit">Simpan perubahan</button><button class="button secondary" type="button" data-edit-cancel>Batal</button></div></form>` : ''}
         ${canEdit ? `<hr class="divider" /><h3 class="section-title">Tambah siswa</h3><form class="stack" data-action="student"><div class="form-grid"><div class="field"><label>ID siswa</label><input name="studentCode" required /></div><div class="field"><label>Nama siswa</label><input name="name" required /></div><div class="field full"><label>Rombel</label><select name="classId" required>${data.classes.map((room) => `<option value="${esc(room.id)}">${esc(room.name)} · Kelas ${esc(room.grade)}</option>`).join('')}</select></div></div><button class="button primary" type="submit" ${data.classes.length ? '' : 'disabled'}>Simpan siswa</button></form>` : ''}
       </article>
     </div>`;
@@ -280,10 +286,13 @@ function renderSubjects(): string {
   if (!data) return '';
   const canAddSubject = data.user.role === 'principal';
   const canAddObjective = ['principal', 'subject_teacher'].includes(data.user.role);
+  const canManage = data.user.role === 'principal';
   const termId = activeTermId;
   const relevantSubjects = data.subjects;
   const objectives = data.objectives;
   const scoreRules = data.rules;
+  const editingSubject = editing?.type === 'subject' ? relevantSubjects.find((subject) => Number(subject.id) === editing!.id) : undefined;
+  const editingObjective = editing?.type === 'objective' ? objectives.find((objective) => Number(objective.id) === editing!.id) : undefined;
   const initialRule = relevantSubjects.length
     ? scoreRules.find((item) => Number(item.subject_id) === Number(relevantSubjects[0]!.id) && Number(item.term_id) === Number(termId))
     : undefined;
@@ -292,7 +301,9 @@ function renderSubjects(): string {
     <div class="grid two">
       <div class="stack">
         <article class="card"><h3 class="section-title">Mata pelajaran</h3>
-          ${relevantSubjects.length ? `<div class="table-wrap"><table><thead><tr><th>Mata pelajaran</th><th>Kelas</th><th>TP</th></tr></thead><tbody>${relevantSubjects.map((subject) => `<tr><td><strong>${esc(subject.name)}</strong></td><td>${esc(subject.grade)} · Fase ${esc(subject.phase)}</td><td>${objectives.filter((objective) => Number(objective.subject_id) === Number(subject.id)).length}</td></tr>`).join('')}</tbody></table></div>` : empty('Belum ada mata pelajaran.')}</article>
+          ${relevantSubjects.length ? `<div class="table-wrap"><table><thead><tr><th>Mata pelajaran</th><th>Kelas</th><th>TP</th>${canManage ? '<th>Aksi</th>' : ''}</tr></thead><tbody>${relevantSubjects.map((subject) => `<tr><td><strong>${esc(subject.name)}</strong></td><td>${esc(subject.grade)} · Fase ${esc(subject.phase)}</td><td>${objectives.filter((objective) => Number(objective.subject_id) === Number(subject.id)).length}</td>${canManage ? `<td><button class="button secondary small" data-edit="subject" data-id="${esc(subject.id)}">Edit</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : empty('Belum ada mata pelajaran.')}
+          ${editingSubject ? `<hr class="divider" /><h3 class="section-title">Edit mata pelajaran</h3><form class="stack" data-action="editSubject"><input type="hidden" name="id" value="${esc(editingSubject.id)}" /><div class="form-grid"><div class="field"><label>Nama mata pelajaran</label><input name="name" value="${esc(editingSubject.name)}" required /></div><div class="field"><label>Kelas</label><select name="grade" required>${[1, 2, 3, 4, 5, 6].map((grade) => `<option value="${grade}" ${Number(editingSubject.grade) === grade ? 'selected' : ''}>Kelas ${grade} · Fase ${grade < 3 ? 'A' : grade < 5 ? 'B' : 'C'}</option>`).join('')}</select></div></div><p class="hint">Tingkat dikunci setelah TP/bobot digunakan; nama dikunci setelah rapor pada kelas/fase ini ditinjau.</p><div class="actions"><button class="button primary" type="submit">Simpan perubahan</button><button class="button secondary" type="button" data-edit-cancel>Batal</button></div></form>` : ''}
+        </article>
         ${canAddSubject ? `<article class="card"><h3 class="section-title">Tambah mata pelajaran</h3><form class="stack" data-action="subject"><div class="form-grid"><div class="field"><label>Nama mata pelajaran</label><input name="name" required /></div><div class="field"><label>Kelas</label><select name="grade">${[1, 2, 3, 4, 5, 6].map((grade) => `<option value="${grade}">Kelas ${grade} · Fase ${grade < 3 ? 'A' : grade < 5 ? 'B' : 'C'}</option>`).join('')}</select></div></div><button class="button primary" type="submit">Simpan mata pelajaran</button></form></article>` : ''}
         ${canAddObjective ? `<article class="card"><h3 class="section-title">Tambah tujuan pembelajaran</h3><form class="stack" data-action="objective"><div class="form-grid"><div class="field"><label>Mata pelajaran</label><select name="subjectId" required>${relevantSubjects.map((subject) => `<option value="${esc(subject.id)}">${esc(subject.name)} · Kelas ${esc(subject.grade)}</option>`).join('')}</select></div><div class="field"><label>Kode TP (opsional)</label><input name="code" /></div><div class="field full"><label>Deskripsi tujuan pembelajaran</label><textarea name="description" required></textarea></div></div><button class="button primary" type="submit" ${relevantSubjects.length ? '' : 'disabled'}>Simpan TP</button></form></article>` : ''}
       </div>
@@ -301,7 +312,9 @@ function renderSubjects(): string {
           <p class="hint">Nilai tiap jenis dirata-ratakan dalam skala 0–100, lalu dikalikan bobot yang ditentukan. Jika suatu jenis berbobot di atas 0 namun belum ada nilai, rapor belum lengkap.</p>
           ${data.user.role === 'principal' ? `<form class="stack" data-action="weights"><div class="field"><label>Periode</label><select name="termId" required>${data.terms.map((term) => `<option value="${esc(term.id)}" ${String(term.id) === termId ? 'selected' : ''}>${esc(term.academic_year)} · Semester ${esc(term.semester)}</option>`).join('')}</select></div><div class="field"><label>Mata pelajaran</label><select name="subjectId" required>${relevantSubjects.map((subject) => { const rule = scoreRules.find((item) => Number(item.subject_id) === Number(subject.id) && Number(item.term_id) === Number(termId)); return `<option value="${esc(subject.id)}">${esc(subject.name)} · K${esc(subject.grade)}${rule ? ` (${esc(rule.formative_weight)} / ${esc(rule.summative_weight)})` : ' (belum diatur)'}</option>`; }).join('')}</select></div><div class="form-grid"><div class="field"><label>Formatif (%)</label><input name="formativeWeight" type="number" min="0" max="100" step="0.1" value="${esc(initialRule?.formative_weight ?? '')}" placeholder="0–100" required /></div><div class="field"><label>Sumatif (%)</label><input name="summativeWeight" type="number" min="0" max="100" step="0.1" value="${esc(initialRule?.summative_weight ?? '')}" placeholder="0–100" required /></div></div><div class="hint">Tidak ada bobot bawaan. Jumlah yang Anda pilih harus tepat 100%.</div><button class="button primary" type="submit">Simpan bobot</button></form>` : `<div class="callout warning">Hanya kepala sekolah yang dapat mengatur bobot.</div>`}
         </article>
-        <article class="card"><h3 class="section-title">Tujuan pembelajaran</h3>${data.objectives.length ? `<div class="list">${data.objectives.map((objective) => `<div class="list-row"><div><strong>${esc(objective.code || 'TP')} · ${esc(objective.subject_name)}</strong><small>Kelas ${esc(objective.grade)} · Fase ${esc(objective.phase)} · ${esc(objective.description)}</small></div></div>`).join('')}</div>` : empty('Tambahkan TP untuk mulai membuat asesmen.')}</article>
+        <article class="card"><h3 class="section-title">Tujuan pembelajaran</h3>${data.objectives.length ? `<div class="list">${data.objectives.map((objective) => `<div class="list-row"><div><strong>${esc(objective.code || 'TP')} · ${esc(objective.subject_name)}</strong><small>Kelas ${esc(objective.grade)} · Fase ${esc(objective.phase)} · ${esc(objective.description)}</small></div>${canManage ? `<button class="button secondary small" data-edit="objective" data-id="${esc(objective.id)}">Edit</button>` : ''}</div>`).join('')}</div>` : empty('Tambahkan TP untuk mulai membuat asesmen.')}
+          ${editingObjective ? `<hr class="divider" /><h3 class="section-title">Edit tujuan pembelajaran</h3><form class="stack" data-action="editObjective"><input type="hidden" name="id" value="${esc(editingObjective.id)}" /><div class="form-grid"><div class="field"><label>Mata pelajaran</label><select name="subjectId" required>${relevantSubjects.map((subject) => `<option value="${esc(subject.id)}" ${Number(editingObjective.subject_id) === Number(subject.id) ? 'selected' : ''}>${esc(subject.name)} · Kelas ${esc(subject.grade)}</option>`).join('')}</select></div><div class="field"><label>Kode TP (opsional)</label><input name="code" value="${esc(editingObjective.code)}" /></div><div class="field full"><label>Deskripsi tujuan pembelajaran</label><textarea name="description" required>${esc(editingObjective.description)}</textarea></div></div><p class="hint">TP dikunci setelah asesmen dibuat agar riwayat penilaian tidak berubah.</p><div class="actions"><button class="button primary" type="submit">Simpan perubahan</button><button class="button secondary" type="button" data-edit-cancel>Batal</button></div></form>` : ''}
+        </article>
       </div>
     </div>`;
 }
@@ -391,6 +404,8 @@ function renderSettings(): string {
   if (!data) return '';
   const settings = data.settings;
   const isPrincipal = data.user.role === 'principal';
+  const editingTerm = editing?.type === 'term' ? data.terms.find((term) => Number(term.id) === editing!.id) : undefined;
+  const editingUser = editing?.type === 'user' ? data.users.find((user) => Number(user.id) === editing!.id) : undefined;
   const roleOptions: [Role, string][] = [
     ['subject_teacher', roleLabel.subject_teacher],
     ['homeroom_teacher', roleLabel.homeroom_teacher],
@@ -403,8 +418,14 @@ function renderSettings(): string {
         ${isPrincipal ? `<form class="stack" data-action="settings"><div class="field"><label>Nama sekolah (opsional)</label><input name="name" value="${esc(settings.name)}" /></div><div class="field"><label>URL logo (opsional)</label><input name="logoUrl" type="url" value="${esc(settings.logo_url)}" placeholder="https://…" /></div><div class="field"><label>Kota (opsional)</label><input name="city" value="${esc(settings.city)}" /></div><div class="field"><label>Nama kepala sekolah (opsional)</label><input name="principalName" value="${esc(settings.principal_name)}" /></div><button class="button primary" type="submit">Simpan identitas</button></form>` : `<div class="callout warning">Hanya kepala sekolah yang dapat mengedit identitas sekolah.</div>`}
       </article>
       <div class="stack">
-        <article class="card"><h3 class="section-title">Periode akademik</h3>${data.terms.length ? `<div class="list">${data.terms.map((term) => `<div class="list-row"><div><strong>${esc(term.academic_year)} · Semester ${esc(term.semester)}</strong><small>${esc(term.starts_on)} sampai ${esc(term.ends_on)}</small></div></div>`).join('')}</div>` : empty('Belum ada periode.')}${isPrincipal ? `<hr class="divider" /><form class="stack" data-action="term"><div class="form-grid"><div class="field"><label>Tahun ajaran</label><input name="academicYear" placeholder="2026/2027" required /></div><div class="field"><label>Semester</label><select name="semester"><option value="1">Semester 1</option><option value="2">Semester 2</option></select></div><div class="field"><label>Tanggal mulai</label><input name="startsOn" type="date" required /></div><div class="field"><label>Tanggal akhir</label><input name="endsOn" type="date" required /></div></div><button class="button primary" type="submit">Tambah periode</button></form>` : ''}</article>
-        <article class="card"><h3 class="section-title">Akun pengguna</h3>${data.users.length ? `<div class="list">${data.users.map((user) => `<div class="list-row"><div><strong>${esc(user.name)}</strong><small>${esc(user.username)} · ${esc(roleLabel[user.role as Role])}</small></div></div>`).join('')}</div>` : empty('Daftar akun hanya dapat dilihat kepala sekolah.')}${isPrincipal ? `<hr class="divider" /><form class="stack" data-action="user"><div class="form-grid"><div class="field"><label>Nama lengkap</label><input name="name" required /></div><div class="field"><label>Nama pengguna</label><input name="username" required /></div><div class="field"><label>Peran</label><select name="role">${roleOptions.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div><div class="field"><label>Kata sandi sementara (min. 12 karakter)</label><input name="password" type="password" minlength="12" required /></div></div><button class="button primary" type="submit">Buat akun</button></form>` : ''}</article>
+        <article class="card"><h3 class="section-title">Periode akademik</h3>${data.terms.length ? `<div class="list">${data.terms.map((term) => `<div class="list-row"><div><strong>${esc(term.academic_year)} · Semester ${esc(term.semester)}</strong><small>${esc(term.starts_on)} sampai ${esc(term.ends_on)}</small></div>${isPrincipal ? `<button class="button secondary small" data-edit="term" data-id="${esc(term.id)}">Edit</button>` : ''}</div>`).join('')}</div>` : empty('Belum ada periode.')}
+          ${editingTerm ? `<hr class="divider" /><h3 class="section-title">Edit periode</h3><form class="stack" data-action="editTerm"><input type="hidden" name="id" value="${esc(editingTerm.id)}" /><div class="form-grid"><div class="field"><label>Tahun ajaran</label><input name="academicYear" value="${esc(editingTerm.academic_year)}" required /></div><div class="field"><label>Semester</label><select name="semester"><option value="1" ${Number(editingTerm.semester) === 1 ? 'selected' : ''}>Semester 1</option><option value="2" ${Number(editingTerm.semester) === 2 ? 'selected' : ''}>Semester 2</option></select></div><div class="field"><label>Tanggal mulai</label><input name="startsOn" type="date" value="${esc(editingTerm.starts_on)}" required /></div><div class="field"><label>Tanggal akhir</label><input name="endsOn" type="date" value="${esc(editingTerm.ends_on)}" required /></div></div><p class="hint">Periode tidak dapat diubah setelah dipakai oleh rapor, asesmen, bobot, atau kehadiran.</p><div class="actions"><button class="button primary" type="submit">Simpan perubahan</button><button class="button secondary" type="button" data-edit-cancel>Batal</button></div></form>` : ''}
+          ${isPrincipal ? `<hr class="divider" /><form class="stack" data-action="term"><div class="form-grid"><div class="field"><label>Tahun ajaran</label><input name="academicYear" placeholder="2026/2027" required /></div><div class="field"><label>Semester</label><select name="semester"><option value="1">Semester 1</option><option value="2">Semester 2</option></select></div><div class="field"><label>Tanggal mulai</label><input name="startsOn" type="date" required /></div><div class="field"><label>Tanggal akhir</label><input name="endsOn" type="date" required /></div></div><button class="button primary" type="submit">Tambah periode</button></form>` : ''}
+        </article>
+        <article class="card"><h3 class="section-title">Akun pengguna</h3>${data.users.length ? `<div class="list">${data.users.map((user) => `<div class="list-row"><div><strong>${esc(user.name)}</strong><small>${esc(user.username)} · ${esc(roleLabel[user.role as Role])}</small></div>${isPrincipal ? `<button class="button secondary small" data-edit="user" data-id="${esc(user.id)}">Edit</button>` : ''}</div>`).join('')}</div>` : empty('Daftar akun hanya dapat dilihat kepala sekolah.')}
+          ${editingUser ? `<hr class="divider" /><h3 class="section-title">Edit akun pengguna</h3><form class="stack" data-action="editUser"><input type="hidden" name="id" value="${esc(editingUser.id)}" /><div class="form-grid"><div class="field"><label>Nama lengkap</label><input name="name" value="${esc(editingUser.name)}" required /></div><div class="field"><label>Nama pengguna</label><input name="username" value="${esc(editingUser.username)}" required /></div><div class="field"><label>Peran</label><select name="role">${roleOptions.map(([value, label]) => `<option value="${value}" ${editingUser.role === value ? 'selected' : ''}>${label}</option>`).join('')}</select></div><div class="field"><label>Kata sandi baru (opsional, min. 12 karakter)</label><input name="password" type="password" minlength="12" autocomplete="new-password" /></div></div><p class="hint">Akun kepala sekolah terakhir tidak dapat diturunkan perannya.</p><div class="actions"><button class="button primary" type="submit">Simpan perubahan</button><button class="button secondary" type="button" data-edit-cancel>Batal</button></div></form>` : ''}
+          ${isPrincipal ? `<hr class="divider" /><form class="stack" data-action="user"><div class="form-grid"><div class="field"><label>Nama lengkap</label><input name="name" required /></div><div class="field"><label>Nama pengguna</label><input name="username" required /></div><div class="field"><label>Peran</label><select name="role">${roleOptions.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div><div class="field"><label>Kata sandi sementara (min. 12 karakter)</label><input name="password" type="password" minlength="12" required /></div></div><button class="button primary" type="submit">Buat akun</button></form>` : ''}
+        </article>
       </div>
     </div>`;
 }
@@ -419,6 +440,7 @@ async function handleSubmit(form: HTMLFormElement): Promise<void> {
       body: JSON.stringify(fields)
     });
     data = null;
+    editing = null;
     screen = 'dashboard';
     await refresh();
     showToast(`Selamat datang, ${result.user.name}.`);
@@ -463,14 +485,32 @@ async function handleSubmit(form: HTMLFormElement): Promise<void> {
     user: '/api/users',
     settings: '/api/settings'
   };
-  const endpoint = action ? endpoints[action] : undefined;
+  const updateEndpoints: Record<string, string> = {
+    editClass: '/api/classes',
+    editStudent: '/api/students',
+    editSubject: '/api/subjects',
+    editObjective: '/api/objectives',
+    editTerm: '/api/terms',
+    editUser: '/api/users'
+  };
+  const endpoint =
+    action && updateEndpoints[action]
+      ? `${updateEndpoints[action]}/${encodeURIComponent(String(fields.id ?? ''))}`
+      : action
+        ? endpoints[action]
+        : undefined;
   if (!endpoint) return;
   const normalized: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fields)) {
     if (value instanceof File) continue;
     normalized[key] = value;
   }
-  await post(endpoint, normalized);
+  await request(endpoint, {
+    method: action && updateEndpoints[action] ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(normalized)
+  });
+  if (action && updateEndpoints[action]) editing = null;
   if (action === 'weights' && typeof normalized.termId === 'string') activeTermId = normalized.termId;
   await refresh();
   showToast('Perubahan berhasil disimpan.');
@@ -510,6 +550,17 @@ function syncLinkedChoices(form: HTMLFormElement): void {
 appRoot.addEventListener('click', async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+  if (target.closest('[data-edit-cancel]')) {
+    editing = null;
+    renderApp();
+    return;
+  }
+  const editButton = target.closest<HTMLButtonElement>('[data-edit]');
+  if (editButton?.dataset.edit && editButton.dataset.id) {
+    editing = { type: editButton.dataset.edit, id: Number(editButton.dataset.id) };
+    renderApp();
+    return;
+  }
   const screenButton = target.closest<HTMLElement>('[data-screen]');
   if (screenButton?.dataset.screen) {
     screen = screenButton.dataset.screen;
@@ -543,6 +594,7 @@ appRoot.addEventListener('click', async (event) => {
     try {
       await request('/api/auth/logout', { method: 'POST' });
       data = null;
+      editing = null;
       renderAuth(false);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Keluar gagal.', true);
