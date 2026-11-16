@@ -602,7 +602,7 @@ app.delete(
          LIMIT 1`,
         [userId]
       );
-      assertDeletionAllowed('user', related.rowCount > 0);
+      assertDeletionAllowed('user', related.rows.length > 0);
       if (current.rows[0].role === 'principal') {
         const principals = await client.query<{ count: string }>(
           "SELECT COUNT(*) AS count FROM users WHERE role = 'principal'"
@@ -723,7 +723,7 @@ app.delete(
         'SELECT 1 FROM students WHERE class_id = $1 LIMIT 1',
         [classId]
       );
-      assertDeletionAllowed('class', related.rowCount > 0);
+      assertDeletionAllowed('class', related.rows.length > 0);
       await client.query('DELETE FROM classes WHERE id = $1', [classId]);
     });
     await audit(req.user!.id, 'delete_class', 'class', classId);
@@ -827,7 +827,7 @@ app.delete(
          LIMIT 1`,
         [studentId]
       );
-      assertDeletionAllowed('student', related.rowCount > 0);
+      assertDeletionAllowed('student', related.rows.length > 0);
       await client.query('DELETE FROM students WHERE id = $1', [studentId]);
     });
     await audit(req.user!.id, 'delete_student', 'student', studentId);
@@ -932,7 +932,7 @@ app.delete(
          LIMIT 1`,
         [termId, term.starts_on, term.ends_on]
       );
-      assertDeletionAllowed('term', related.rowCount > 0);
+      assertDeletionAllowed('term', related.rows.length > 0);
       await client.query('DELETE FROM academic_terms WHERE id = $1', [termId]);
     });
     await audit(req.user!.id, 'delete_term', 'term', termId);
@@ -1043,7 +1043,7 @@ app.delete(
          LIMIT 1`,
         [subjectId, subject.grade, subject.phase]
       );
-      assertDeletionAllowed('subject', related.rowCount > 0);
+      assertDeletionAllowed('subject', related.rows.length > 0);
       await client.query('DELETE FROM subjects WHERE id = $1', [subjectId]);
     });
     await audit(req.user!.id, 'delete_subject', 'subject', subjectId);
@@ -1128,7 +1128,7 @@ app.delete(
         'SELECT 1 FROM assessments WHERE objective_id = $1 LIMIT 1',
         [objectiveId]
       );
-      assertDeletionAllowed('objective', related.rowCount > 0);
+      assertDeletionAllowed('objective', related.rows.length > 0);
       await client.query('DELETE FROM learning_objectives WHERE id = $1', [objectiveId]);
     });
     await audit(req.user!.id, 'delete_objective', 'objective', objectiveId);
@@ -1203,7 +1203,7 @@ app.delete(
         "SELECT 1 FROM report_states WHERE term_id = $1 AND status <> 'draft' LIMIT 1",
         [termId]
       );
-      assertDeletionAllowed('score-rule', related.rowCount > 0);
+      assertDeletionAllowed('score-rule', related.rows.length > 0);
       await client.query(
         'DELETE FROM score_rules WHERE term_id = $1 AND subject_id = $2',
         [termId, subjectId]
