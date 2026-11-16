@@ -9,6 +9,15 @@ export type ProtectedEdit =
   | 'objective'
   | 'term';
 
+export type DeletableEntity =
+  | 'class'
+  | 'student'
+  | 'subject'
+  | 'objective'
+  | 'term'
+  | 'user'
+  | 'score-rule';
+
 const editMessages: Record<ProtectedEdit, string> = {
   'class-grade': 'Tingkat rombel tidak dapat diubah karena masih memiliki siswa.',
   'class-name': 'Nama rombel tidak dapat diubah karena sudah tercantum pada rapor yang ditinjau.',
@@ -21,6 +30,22 @@ const editMessages: Record<ProtectedEdit, string> = {
   term: 'Periode tidak dapat diubah karena sudah digunakan oleh data rapor atau kehadiran.'
 };
 
+const deletionLabels: Record<DeletableEntity, string> = {
+  class: 'Rombel',
+  student: 'Siswa',
+  subject: 'Mata pelajaran',
+  objective: 'Tujuan pembelajaran',
+  term: 'Periode akademik',
+  user: 'Pengguna',
+  'score-rule': 'Bobot nilai'
+};
+
 export function assertProtectedEditAllowed(edit: ProtectedEdit, hasRelatedData: boolean): void {
   if (hasRelatedData) throw new Error(editMessages[edit]);
+}
+
+export function assertDeletionAllowed(entity: DeletableEntity, hasRelatedData: boolean): void {
+  if (hasRelatedData) {
+    throw new Error(`${deletionLabels[entity]} masih digunakan dan tidak dapat dihapus.`);
+  }
 }

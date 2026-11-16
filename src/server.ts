@@ -10,7 +10,10 @@ import {
   transaction
 } from './db.js';
 import { safeDatabaseErrorMetadata } from './error-diagnostics.js';
-import { assertProtectedEditAllowed } from './admin-edit-policy.js';
+import {
+  assertDeletionAllowed,
+  assertProtectedEditAllowed
+} from './admin-edit-policy.js';
 import {
   calculateSubjectScore,
   formatDate,
@@ -575,6 +578,46 @@ app.put(
   })
 );
 
+app.delete(
+  '/api/users/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const userId = requireId(req.params.id, 'Pengguna');
+    await transaction(async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock($1)', [781246904]);
+      const current = await client.query<{ role: Role }>(
+        'SELECT role FROM users WHERE id = $1 FOR UPDATE',
+        [userId]
+      );
+      if (!current.rows[0]) throw new Error('Pengguna tidak ditemukan.');
+      const related = await client.query(
+        `SELECT 1 FROM sessions WHERE user_id = $1
+         UNION ALL SELECT 1 FROM audit_log WHERE user_id = $1
+         UNION ALL SELECT 1 FROM assessments WHERE created_by = $1
+         UNION ALL SELECT 1 FROM attendance_imports WHERE imported_by = $1
+         UNION ALL SELECT 1 FROM narratives WHERE reviewed_by = $1
+         UNION ALL SELECT 1 FROM report_states WHERE homeroom_reviewed_by = $1
+            OR approved_by = $1 OR finalized_by = $1
+         LIMIT 1`,
+        [userId]
+      );
+      assertDeletionAllowed('user', related.rowCount > 0);
+      if (current.rows[0].role === 'principal') {
+        const principals = await client.query<{ count: string }>(
+          "SELECT COUNT(*) AS count FROM users WHERE role = 'principal'"
+        );
+        if (Number(principals.rows[0]?.count ?? 0) <= 1) {
+          throw new Error('Kepala sekolah terakhir tidak dapat dihapus.');
+        }
+      }
+      await client.query('DELETE FROM users WHERE id = $1', [userId]);
+    });
+    await audit(req.user!.id, 'delete_user', 'user', userId);
+    res.json({ ok: true });
+  })
+);
+
 app.post(
   '/api/settings',
   requireAuth,
@@ -667,6 +710,27 @@ app.put(
   })
 );
 
+app.delete(
+  '/api/classes/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const classId = requireId(req.params.id, 'Rombel');
+    await transaction(async (client) => {
+      const current = await client.query('SELECT id FROM classes WHERE id = $1 FOR UPDATE', [classId]);
+      if (!current.rows[0]) throw new Error('Rombel tidak ditemukan.');
+      const related = await client.query(
+        'SELECT 1 FROM students WHERE class_id = $1 LIMIT 1',
+        [classId]
+      );
+      assertDeletionAllowed('class', related.rowCount > 0);
+      await client.query('DELETE FROM classes WHERE id = $1', [classId]);
+    });
+    await audit(req.user!.id, 'delete_class', 'class', classId);
+    res.json({ ok: true });
+  })
+);
+
 app.post(
   '/api/students',
   requireAuth,
@@ -745,6 +809,32 @@ app.put(
   })
 );
 
+app.delete(
+  '/api/students/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const studentId = requireId(req.params.id, 'Siswa');
+    await transaction(async (client) => {
+      const current = await client.query('SELECT id FROM students WHERE id = $1 FOR UPDATE', [studentId]);
+      if (!current.rows[0]) throw new Error('Siswa tidak ditemukan.');
+      const related = await client.query(
+        `SELECT 1 FROM attendance WHERE student_id = $1
+         UNION ALL SELECT 1 FROM assessments WHERE student_id = $1
+         UNION ALL SELECT 1 FROM narratives WHERE student_id = $1
+         UNION ALL SELECT 1 FROM report_sections WHERE student_id = $1
+         UNION ALL SELECT 1 FROM report_states WHERE student_id = $1
+         LIMIT 1`,
+        [studentId]
+      );
+      assertDeletionAllowed('student', related.rowCount > 0);
+      await client.query('DELETE FROM students WHERE id = $1', [studentId]);
+    });
+    await audit(req.user!.id, 'delete_student', 'student', studentId);
+    res.json({ ok: true });
+  })
+);
+
 app.post(
   '/api/terms',
   requireAuth,
@@ -814,6 +904,38 @@ app.put(
       termId
     );
     await audit(req.user!.id, 'update_term', 'term', termId);
+    res.json({ ok: true });
+  })
+);
+
+app.delete(
+  '/api/terms/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const termId = requireId(req.params.id, 'Periode');
+    await transaction(async (client) => {
+      const current = await client.query<{ starts_on: string; ends_on: string }>(
+        'SELECT starts_on, ends_on FROM academic_terms WHERE id = $1 FOR UPDATE',
+        [termId]
+      );
+      const term = current.rows[0];
+      if (!term) throw new Error('Periode tidak ditemukan.');
+      const related = await client.query(
+        `SELECT 1 FROM score_rules WHERE term_id = $1
+         UNION ALL SELECT 1 FROM assessments WHERE term_id = $1
+         UNION ALL SELECT 1 FROM narratives WHERE term_id = $1
+         UNION ALL SELECT 1 FROM report_sections WHERE term_id = $1
+         UNION ALL SELECT 1 FROM report_states WHERE term_id = $1
+         UNION ALL SELECT 1 FROM attendance
+           WHERE attendance_date BETWEEN $2 AND $3
+         LIMIT 1`,
+        [termId, term.starts_on, term.ends_on]
+      );
+      assertDeletionAllowed('term', related.rowCount > 0);
+      await client.query('DELETE FROM academic_terms WHERE id = $1', [termId]);
+    });
+    await audit(req.user!.id, 'delete_term', 'term', termId);
     res.json({ ok: true });
   })
 );
@@ -897,6 +1019,38 @@ app.put(
   })
 );
 
+app.delete(
+  '/api/subjects/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const subjectId = requireId(req.params.id, 'Mata pelajaran');
+    await transaction(async (client) => {
+      const current = await client.query<{ grade: number; phase: string }>(
+        'SELECT grade, phase FROM subjects WHERE id = $1 FOR UPDATE',
+        [subjectId]
+      );
+      const subject = current.rows[0];
+      if (!subject) throw new Error('Mata pelajaran tidak ditemukan.');
+      const related = await client.query(
+        `SELECT 1 FROM learning_objectives WHERE subject_id = $1
+         UNION ALL SELECT 1 FROM score_rules WHERE subject_id = $1
+         UNION ALL SELECT 1 FROM narratives WHERE subject_id = $1
+         UNION ALL SELECT 1 FROM students
+           JOIN classes ON classes.id = students.class_id
+           JOIN report_states ON report_states.student_id = students.id
+           WHERE classes.grade = $2 AND classes.phase = $3
+         LIMIT 1`,
+        [subjectId, subject.grade, subject.phase]
+      );
+      assertDeletionAllowed('subject', related.rowCount > 0);
+      await client.query('DELETE FROM subjects WHERE id = $1', [subjectId]);
+    });
+    await audit(req.user!.id, 'delete_subject', 'subject', subjectId);
+    res.json({ ok: true });
+  })
+);
+
 app.post(
   '/api/objectives',
   requireAuth,
@@ -958,6 +1112,30 @@ app.put(
   })
 );
 
+app.delete(
+  '/api/objectives/:id',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const objectiveId = requireId(req.params.id, 'Tujuan pembelajaran');
+    await transaction(async (client) => {
+      const current = await client.query(
+        'SELECT id FROM learning_objectives WHERE id = $1 FOR UPDATE',
+        [objectiveId]
+      );
+      if (!current.rows[0]) throw new Error('Tujuan pembelajaran tidak ditemukan.');
+      const related = await client.query(
+        'SELECT 1 FROM assessments WHERE objective_id = $1 LIMIT 1',
+        [objectiveId]
+      );
+      assertDeletionAllowed('objective', related.rowCount > 0);
+      await client.query('DELETE FROM learning_objectives WHERE id = $1', [objectiveId]);
+    });
+    await audit(req.user!.id, 'delete_objective', 'objective', objectiveId);
+    res.json({ ok: true });
+  })
+);
+
 app.post(
   '/api/score-rules',
   requireAuth,
@@ -1004,6 +1182,34 @@ app.post(
       summativeWeight
     );
     await audit(req.user!.id, 'update_score_rule', 'score_rule', `${termId}:${subjectId}`);
+    res.json({ ok: true });
+  })
+);
+
+app.delete(
+  '/api/score-rules/:termId/:subjectId',
+  requireAuth,
+  requireRole('principal'),
+  route(async (req, res) => {
+    const termId = requireId(req.params.termId, 'Periode');
+    const subjectId = requireId(req.params.subjectId, 'Mata pelajaran');
+    await transaction(async (client) => {
+      const current = await client.query(
+        'SELECT term_id FROM score_rules WHERE term_id = $1 AND subject_id = $2 FOR UPDATE',
+        [termId, subjectId]
+      );
+      if (!current.rows[0]) throw new Error('Bobot nilai tidak ditemukan.');
+      const related = await client.query(
+        "SELECT 1 FROM report_states WHERE term_id = $1 AND status <> 'draft' LIMIT 1",
+        [termId]
+      );
+      assertDeletionAllowed('score-rule', related.rowCount > 0);
+      await client.query(
+        'DELETE FROM score_rules WHERE term_id = $1 AND subject_id = $2',
+        [termId, subjectId]
+      );
+    });
+    await audit(req.user!.id, 'delete_score_rule', 'score_rule', `${termId}:${subjectId}`);
     res.json({ ok: true });
   })
 );
